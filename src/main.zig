@@ -1,5 +1,5 @@
 const std = @import("std");
-const core_audio = @import("core_audio.zig");
+const core_audio = @import("core_audio");
 
 pub const Device = struct {
     // Рантайм ID. По сути основной идентификатор, который ходит по Core Audio. Хранить нельзя, т.к. может меняться

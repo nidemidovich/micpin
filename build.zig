@@ -12,6 +12,20 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
+    const core_audio = b.addModule("core_audio", .{
+        .root_source_file = b.path("src/core_audio.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{
+            .{
+                .name = "c",
+                .module = translator.mod,
+            },
+        },
+    });
+    core_audio.linkFramework("CoreAudio", .{});
+    core_audio.linkFramework("CoreFoundation", .{});
+
     const exe = b.addExecutable(.{
         .name = "micpin",
         .root_module = b.createModule(.{
@@ -20,15 +34,12 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
             .imports = &.{
                 .{
-                    .name = "c",
-                    .module = translator.mod,
+                    .name = "core_audio",
+                    .module = core_audio,
                 },
             },
         }),
     });
-    exe.root_module.linkFramework("CoreAudio", .{});
-    exe.root_module.linkFramework("CoreFoundation", .{});
-
     b.installArtifact(exe);
 
     const run_step = b.step("run", "Run the app");
