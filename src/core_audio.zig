@@ -53,13 +53,27 @@ pub fn load_device_ids(allocator: std.mem.Allocator) ![]u32 {
 }
 
 pub fn load_device_name(allocator: std.mem.Allocator, device_id: u32) ![]const u8 {
+    return load_device_string(allocator, device_id, c.kAudioObjectPropertyName, "name");
+}
+
+/// Загружает постоянный UID устройства. Возвращённую UTF-8 строку освобождает вызывающий код.
+pub fn load_device_uid(allocator: std.mem.Allocator, device_id: u32) ![]const u8 {
+    return load_device_string(allocator, device_id, c.kAudioDevicePropertyDeviceUID, "UID");
+}
+
+fn load_device_string(
+    allocator: std.mem.Allocator,
+    device_id: u32,
+    selector: c.AudioObjectPropertySelector,
+    property_name: []const u8,
+) ![]const u8 {
     const addr = c.AudioObjectPropertyAddress{
-        .mSelector = c.kAudioObjectPropertyName,
+        .mSelector = selector,
         .mScope = c.kAudioObjectPropertyScopeGlobal,
         .mElement = c.kAudioObjectPropertyElementMain,
     };
 
-    var name: c.CFStringRef = null;
+    var value: c.CFStringRef = null;
     var size: c.UInt32 = @sizeOf(c.CFStringRef);
 
     const status = c.AudioObjectGetPropertyData(
@@ -68,18 +82,21 @@ pub fn load_device_name(allocator: std.mem.Allocator, device_id: u32) ![]const u
         0,
         null,
         &size,
-        @ptrCast(&name),
+        @ptrCast(&value),
     );
     if (status != c.noErr) {
         std.debug.print(
-            "AudioObjectGetPropertyData while reading name failed: {}\n",
-            .{status},
+            "AudioObjectGetPropertyData while reading {s} failed: {}\n",
+            .{ property_name, status },
         );
 
         return error.CoreAudioError;
     }
 
-    const length = c.CFStringGetLength(name);
+    if (value == null) return error.MissingStringProperty;
+    defer c.CFRelease(value);
+
+    const length = c.CFStringGetLength(value);
 
     const max_size =
         c.CFStringGetMaximumSizeForEncoding(
@@ -94,7 +111,7 @@ pub fn load_device_name(allocator: std.mem.Allocator, device_id: u32) ![]const u
     errdefer allocator.free(buffer);
 
     if (c.CFStringGetCString(
-        name,
+        value,
         buffer.ptr,
         max_size,
         c.kCFStringEncodingUTF8,
