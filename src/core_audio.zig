@@ -52,6 +52,47 @@ pub fn load_device_ids(allocator: std.mem.Allocator) ![]u32 {
     return devices;
 }
 
+/// Загружает ID устройств, у которых есть хотя бы один входной аудиопоток.
+/// Возвращённый слайс освобождает вызывающий код.
+pub fn load_input_device_ids(allocator: std.mem.Allocator) ![]u32 {
+    const devices = try load_device_ids(allocator);
+    errdefer allocator.free(devices);
+
+    var input_count: usize = 0;
+    for (devices) |device_id| {
+        if (try has_input(device_id)) {
+            devices[input_count] = device_id;
+            input_count += 1;
+        }
+    }
+
+    return allocator.realloc(devices, input_count);
+}
+
+/// Проверяет поддержку ввода звука, независимо от того, идёт ли сейчас запись.
+pub fn has_input(device_id: u32) !bool {
+    const addr = c.AudioObjectPropertyAddress{
+        .mSelector = c.kAudioDevicePropertyStreams,
+        .mScope = c.kAudioObjectPropertyScopeInput,
+        .mElement = c.kAudioObjectPropertyElementMain,
+    };
+
+    var data_size: c.UInt32 = 0;
+    const status = c.AudioObjectGetPropertyDataSize(
+        device_id,
+        &addr,
+        0,
+        null,
+        &data_size,
+    );
+    if (status != c.noErr) {
+        std.debug.print("AudioObjectGetPropertyDataSize while reading input streams failed: {}\n", .{status});
+        return error.CoreAudioError;
+    }
+
+    return data_size > 0;
+}
+
 pub fn load_device_name(allocator: std.mem.Allocator, device_id: u32) ![]const u8 {
     return load_device_string(allocator, device_id, c.kAudioObjectPropertyName, "name");
 }
