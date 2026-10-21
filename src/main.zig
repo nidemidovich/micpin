@@ -1,15 +1,6 @@
 const std = @import("std");
 const core_audio = @import("core_audio");
 
-pub const Device = struct {
-    // Рантайм ID. По сути основной идентификатор, который ходит по Core Audio. Хранить нельзя, т.к. может меняться
-    id: u32,
-    // Постоянный идентификатор устройства. Можно хранить и получать рантайм ID, пока устройство доступно
-    uid: []const u8,
-    // Имя устройства
-    name: []const u8,
-};
-
 pub fn main(init: std.process.Init) !void {
     const allocator = init.arena.allocator();
 
@@ -25,4 +16,8 @@ pub fn main(init: std.process.Init) !void {
             .{ device_id, name, uid },
         );
     }
+}
+
+test {
+    _ = @import("consume.zig");
 }

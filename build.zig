@@ -57,4 +57,8 @@ pub fn build(b: *std.Build) void {
 
     const test_step = b.step("test", "Run tests");
     test_step.dependOn(&run_exe_tests.step);
+
+    const core_audio_tests = b.addTest(.{ .root_module = core_audio });
+    const run_core_audio_tests = b.addRunArtifact(core_audio_tests);
+    test_step.dependOn(&run_core_audio_tests.step);
 }
