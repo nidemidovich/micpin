@@ -30,11 +30,11 @@ fn makeDeviceChangesCallback(
 }
 
 pub const Device = struct {
-    // Рантайм ID. По сути основной идентификатор, который ходит по Core Audio. Хранить нельзя, т.к. может меняться
+    /// Runtime identifier used by Core Audio. Do not persist it because it can change.
     id: u32,
-    // Постоянный идентификатор устройства. Можно хранить и получать рантайм ID, пока устройство доступно
+    /// Persistent device identifier used to find its runtime ID while it is available.
     uid: []const u8,
-    // Имя устройства
+    /// Device name.
     name: []const u8,
 };
 
@@ -76,52 +76,50 @@ pub const CoreAudioAdapter = struct {
         }
         self.allocator.free(devices);
     }
-
-    pub fn setAsDefaultInput(_: CoreAudioAdapter, device_id: u32) !void {
-        const address = propertyAddress(c.kAudioHardwarePropertyDefaultInputDevice);
-        const id: c.AudioDeviceID = device_id;
-        try checkStatus(c.AudioObjectSetPropertyData(
-            c.kAudioObjectSystemObject,
-            &address,
-            0,
-            null,
-            @sizeOf(c.AudioDeviceID),
-            &id,
-        ), "setting the default input device");
-    }
-
-    /// Registers a notification handler without configuring the HAL notification run loop.
-    /// The caller owns the context, its synchronization and its lifetime. Keep the
-    /// context at a stable address until removal and completion of in-flight callbacks.
-    pub fn subscribeDeviceChanges(
-        _: CoreAudioAdapter,
-        context: anytype,
-        comptime onChange: *const fn (@TypeOf(context)) void,
-    ) !void {
-        try checkStatus(c.AudioObjectAddPropertyListener(
-            c.kAudioObjectSystemObject,
-            &devices_address,
-            makeDeviceChangesCallback(@TypeOf(context), onChange),
-            context,
-        ), "registering the device listener");
-    }
-
-    /// Remove with the same context type, pointer and handler used to subscribe. This only
-    /// unregisters the callback; the caller must coordinate in-flight handlers.
-    /// Close a handler's queue first if it can be waiting for space there.
-    pub fn unsubscribeDeviceChanges(
-        _: CoreAudioAdapter,
-        context: anytype,
-        comptime onChange: *const fn (@TypeOf(context)) void,
-    ) !void {
-        try checkStatus(c.AudioObjectRemovePropertyListener(
-            c.kAudioObjectSystemObject,
-            &devices_address,
-            makeDeviceChangesCallback(@TypeOf(context), onChange),
-            context,
-        ), "removing the device listener");
-    }
 };
+
+pub fn setAsDefaultInput(device_id: u32) !void {
+    const address = propertyAddress(c.kAudioHardwarePropertyDefaultInputDevice);
+    const id: c.AudioDeviceID = device_id;
+    try checkStatus(c.AudioObjectSetPropertyData(
+        c.kAudioObjectSystemObject,
+        &address,
+        0,
+        null,
+        @sizeOf(c.AudioDeviceID),
+        &id,
+    ), "setting the default input device");
+}
+
+/// Registers a notification handler without configuring the HAL notification run loop.
+/// The caller owns the context, its synchronization and its lifetime. Keep the
+/// context at a stable address until removal and completion of in-flight callbacks.
+pub fn subscribeDeviceChanges(
+    context: anytype,
+    comptime onChange: *const fn (@TypeOf(context)) void,
+) !void {
+    try checkStatus(c.AudioObjectAddPropertyListener(
+        c.kAudioObjectSystemObject,
+        &devices_address,
+        makeDeviceChangesCallback(@TypeOf(context), onChange),
+        context,
+    ), "registering the device listener");
+}
+
+/// Remove with the same context type, pointer and handler used to subscribe. This only
+/// unregisters the callback; the caller must coordinate in-flight handlers.
+/// Close a handler's queue first if it can be waiting for space there.
+pub fn unsubscribeDeviceChanges(
+    context: anytype,
+    comptime onChange: *const fn (@TypeOf(context)) void,
+) !void {
+    try checkStatus(c.AudioObjectRemovePropertyListener(
+        c.kAudioObjectSystemObject,
+        &devices_address,
+        makeDeviceChangesCallback(@TypeOf(context), onChange),
+        context,
+    ), "removing the device listener");
+}
 
 fn propertyAddress(selector: c.AudioObjectPropertySelector) c.AudioObjectPropertyAddress {
     return .{
@@ -138,11 +136,9 @@ fn checkStatus(status: c.OSStatus, operation: []const u8) !void {
     }
 }
 
-/// Загружает список рантайм ID всех подключенных устройств
-/// Принцип работы:
-///     - Запросить размер списка (kAudioHardwarePropertyDevices) у корневой сущности kAudioObjectSystemObject
-///     - Аллоцировать слайс по полученному размеру
-///     - Запросить сам список в аллоцированный слайс у той же сущности kAudioObjectSystemObject
+/// Loads the runtime IDs of all connected devices. The caller owns the returned slice.
+/// Queries the size of kAudioHardwarePropertyDevices on kAudioObjectSystemObject,
+/// allocates a slice of that size, then reads the property into the slice.
 pub fn loadDeviceIds(allocator: std.mem.Allocator) ![]u32 {
     const addr = devices_address;
 
@@ -193,8 +189,8 @@ pub fn loadDeviceIds(allocator: std.mem.Allocator) ![]u32 {
     return allocator.realloc(devices, data_size / @sizeOf(c.AudioDeviceID));
 }
 
-/// Загружает ID устройств, у которых есть хотя бы один входной аудиопоток.
-/// Возвращённый слайс освобождает вызывающий код.
+/// Loads the IDs of devices with at least one input audio stream.
+/// The caller owns the returned slice.
 pub fn loadInputDeviceIds(allocator: std.mem.Allocator) ![]u32 {
     const devices = try loadDeviceIds(allocator);
     errdefer allocator.free(devices);
@@ -210,7 +206,7 @@ pub fn loadInputDeviceIds(allocator: std.mem.Allocator) ![]u32 {
     return allocator.realloc(devices, input_count);
 }
 
-/// Проверяет поддержку ввода звука, независимо от того, идёт ли сейчас запись.
+/// Checks whether a device supports audio input, regardless of whether it is recording.
 pub fn hasInput(device_id: u32) !bool {
     const addr = c.AudioObjectPropertyAddress{
         .mSelector = c.kAudioDevicePropertyStreams,
@@ -238,7 +234,7 @@ pub fn loadDeviceName(allocator: std.mem.Allocator, device_id: u32) ![]const u8 
     return loadDeviceString(allocator, device_id, c.kAudioObjectPropertyName, "name");
 }
 
-/// Загружает постоянный UID устройства. Возвращённую UTF-8 строку освобождает вызывающий код.
+/// Loads the persistent device UID. The caller owns the returned UTF-8 string.
 pub fn loadDeviceUid(allocator: std.mem.Allocator, device_id: u32) ![]const u8 {
     return loadDeviceString(allocator, device_id, c.kAudioDevicePropertyDeviceUID, "UID");
 }

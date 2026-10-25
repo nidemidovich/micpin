@@ -73,7 +73,6 @@ pub const Listener = struct {
 
 pub const PreferedDeviceConsumer = struct {
     event_queue: *EventQueue,
-    core_audio: CoreAudioAdapter,
 
     pub fn run(self: *PreferedDeviceConsumer, io: std.Io) !void {
         while (true) {
@@ -82,7 +81,7 @@ pub const PreferedDeviceConsumer = struct {
                 else => return err,
             };
             switch (value.state) {
-                .connected => self.core_audio.setAsDefaultInput(value.id) catch |err| {
+                .connected => core_audio.setAsDefaultInput(value.id) catch |err| {
                     std.log.err("Setting the preferred microphone failed: {s}", .{@errorName(err)});
                 },
                 .disconnected => std.log.debug("Prefered device disconnected\n", .{}),
