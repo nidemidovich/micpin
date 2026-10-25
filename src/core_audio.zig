@@ -11,7 +11,7 @@ const DeviceChangeCallback = *const fn (
 /// Both registration and removal must use this factory to get the same C function.
 fn makeDeviceChangesCallback(
     comptime Context: type,
-    comptime on_change: *const fn (Context) void,
+    comptime onChange: *const fn (Context) void,
 ) DeviceChangeCallback {
     return struct {
         fn callback(
@@ -23,7 +23,7 @@ fn makeDeviceChangesCallback(
             const context: Context = @ptrCast(@alignCast(raw_context orelse return c.noErr));
             // Registered only for device-list changes: HAL includes that property
             // in every notification, and one notification needs one handler call.
-            on_change(context);
+            onChange(context);
             return c.noErr;
         }
     }.callback;
@@ -45,7 +45,7 @@ pub const CoreAudioAdapter = struct {
 
     /// The caller owns the devices and their strings; release them with freeDevices.
     pub fn loadDevices(self: CoreAudioAdapter) ![]Device {
-        const ids = try load_input_device_ids(self.allocator);
+        const ids = try loadInputDeviceIds(self.allocator);
         defer self.allocator.free(ids);
 
         const devices = try self.allocator.alloc(Device, ids.len);
@@ -59,9 +59,9 @@ pub const CoreAudioAdapter = struct {
         }
 
         for (ids) |id| {
-            const name = try load_device_name(self.allocator, id);
+            const name = try loadDeviceName(self.allocator, id);
             errdefer self.allocator.free(name);
-            const uid = try load_device_uid(self.allocator, id);
+            const uid = try loadDeviceUid(self.allocator, id);
 
             devices[initialized] = .{ .id = id, .uid = uid, .name = name };
             initialized += 1;
@@ -96,12 +96,12 @@ pub const CoreAudioAdapter = struct {
     pub fn subscribeDeviceChanges(
         _: CoreAudioAdapter,
         context: anytype,
-        comptime on_change: *const fn (@TypeOf(context)) void,
+        comptime onChange: *const fn (@TypeOf(context)) void,
     ) !void {
         try checkStatus(c.AudioObjectAddPropertyListener(
             c.kAudioObjectSystemObject,
             &devices_address,
-            makeDeviceChangesCallback(@TypeOf(context), on_change),
+            makeDeviceChangesCallback(@TypeOf(context), onChange),
             context,
         ), "registering the device listener");
     }
@@ -112,12 +112,12 @@ pub const CoreAudioAdapter = struct {
     pub fn unsubscribeDeviceChanges(
         _: CoreAudioAdapter,
         context: anytype,
-        comptime on_change: *const fn (@TypeOf(context)) void,
+        comptime onChange: *const fn (@TypeOf(context)) void,
     ) !void {
         try checkStatus(c.AudioObjectRemovePropertyListener(
             c.kAudioObjectSystemObject,
             &devices_address,
-            makeDeviceChangesCallback(@TypeOf(context), on_change),
+            makeDeviceChangesCallback(@TypeOf(context), onChange),
             context,
         ), "removing the device listener");
     }
@@ -143,7 +143,7 @@ fn checkStatus(status: c.OSStatus, operation: []const u8) !void {
 ///     - Запросить размер списка (kAudioHardwarePropertyDevices) у корневой сущности kAudioObjectSystemObject
 ///     - Аллоцировать слайс по полученному размеру
 ///     - Запросить сам список в аллоцированный слайс у той же сущности kAudioObjectSystemObject
-pub fn load_device_ids(allocator: std.mem.Allocator) ![]u32 {
+pub fn loadDeviceIds(allocator: std.mem.Allocator) ![]u32 {
     const addr = devices_address;
 
     var data_size: c.UInt32 = 0;
@@ -195,13 +195,13 @@ pub fn load_device_ids(allocator: std.mem.Allocator) ![]u32 {
 
 /// Загружает ID устройств, у которых есть хотя бы один входной аудиопоток.
 /// Возвращённый слайс освобождает вызывающий код.
-pub fn load_input_device_ids(allocator: std.mem.Allocator) ![]u32 {
-    const devices = try load_device_ids(allocator);
+pub fn loadInputDeviceIds(allocator: std.mem.Allocator) ![]u32 {
+    const devices = try loadDeviceIds(allocator);
     errdefer allocator.free(devices);
 
     var input_count: usize = 0;
     for (devices) |device_id| {
-        if (try has_input(device_id)) {
+        if (try hasInput(device_id)) {
             devices[input_count] = device_id;
             input_count += 1;
         }
@@ -211,7 +211,7 @@ pub fn load_input_device_ids(allocator: std.mem.Allocator) ![]u32 {
 }
 
 /// Проверяет поддержку ввода звука, независимо от того, идёт ли сейчас запись.
-pub fn has_input(device_id: u32) !bool {
+pub fn hasInput(device_id: u32) !bool {
     const addr = c.AudioObjectPropertyAddress{
         .mSelector = c.kAudioDevicePropertyStreams,
         .mScope = c.kAudioObjectPropertyScopeInput,
@@ -234,16 +234,16 @@ pub fn has_input(device_id: u32) !bool {
     return data_size > 0;
 }
 
-pub fn load_device_name(allocator: std.mem.Allocator, device_id: u32) ![]const u8 {
-    return load_device_string(allocator, device_id, c.kAudioObjectPropertyName, "name");
+pub fn loadDeviceName(allocator: std.mem.Allocator, device_id: u32) ![]const u8 {
+    return loadDeviceString(allocator, device_id, c.kAudioObjectPropertyName, "name");
 }
 
 /// Загружает постоянный UID устройства. Возвращённую UTF-8 строку освобождает вызывающий код.
-pub fn load_device_uid(allocator: std.mem.Allocator, device_id: u32) ![]const u8 {
-    return load_device_string(allocator, device_id, c.kAudioDevicePropertyDeviceUID, "UID");
+pub fn loadDeviceUid(allocator: std.mem.Allocator, device_id: u32) ![]const u8 {
+    return loadDeviceString(allocator, device_id, c.kAudioDevicePropertyDeviceUID, "UID");
 }
 
-fn load_device_string(
+fn loadDeviceString(
     allocator: std.mem.Allocator,
     device_id: u32,
     selector: c.AudioObjectPropertySelector,
