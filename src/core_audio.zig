@@ -1,33 +1,59 @@
 const std = @import("std");
 const c = @import("c");
 
-const DeviceChangeCallback = *const fn (
-    object_id: c.AudioObjectID,
-    address_count: c.UInt32,
-    addresses: [*c]const c.AudioObjectPropertyAddress,
-    context: ?*anyopaque,
-) callconv(.c) c.OSStatus;
+pub const AudioObjectPropertyAddress = c.AudioObjectPropertyAddress;
 
-/// Both registration and removal must use this factory to get the same C function.
-fn makeDeviceChangesCallback(
-    comptime Context: type,
-    comptime onChange: *const fn (Context) void,
-) DeviceChangeCallback {
-    return struct {
-        fn callback(
-            _: c.AudioObjectID,
-            _: c.UInt32,
-            _: [*c]const c.AudioObjectPropertyAddress,
-            raw_context: ?*anyopaque,
-        ) callconv(.c) c.OSStatus {
-            const context: Context = @ptrCast(@alignCast(raw_context orelse return c.noErr));
-            // Registered only for device-list changes: HAL includes that property
-            // in every notification, and one notification needs one handler call.
-            onChange(context);
-            return c.noErr;
-        }
-    }.callback;
-}
+// translate-c cannot represent Apple's block declarators. A block argument is
+// an ABI-compatible pointer to the block object, not a function pointer.
+extern fn AudioObjectAddPropertyListenerBlock(
+    object_id: c.AudioObjectID,
+    address: *const c.AudioObjectPropertyAddress,
+    queue: c.dispatch_queue_t,
+    block: *const anyopaque,
+) c.OSStatus;
+
+extern fn AudioObjectRemovePropertyListenerBlock(
+    object_id: c.AudioObjectID,
+    address: *const c.AudioObjectPropertyAddress,
+    queue: c.dispatch_queue_t,
+    block: *const anyopaque,
+) c.OSStatus;
+
+pub const DeviceChangesQueue = struct {
+    value: c.dispatch_queue_t,
+
+    pub fn init() !DeviceChangesQueue {
+        return .{
+            .value = c.dispatch_queue_create("micpin.device-changes", null) orelse
+                return error.OutOfMemory,
+        };
+    }
+
+    pub fn deinit(self: DeviceChangesQueue) void {
+        c.dispatch_release(.{ ._dq = self.value });
+    }
+
+    /// Call from outside this queue. The context must remain valid until return.
+    pub fn sync(
+        self: DeviceChangesQueue,
+        context: anytype,
+        comptime work: *const fn (@TypeOf(context)) void,
+    ) void {
+        c.dispatch_sync_f(self.value, context, struct {
+            fn callback(raw_context: ?*anyopaque) callconv(.c) void {
+                const typed_context: @TypeOf(context) = @ptrCast(@alignCast(raw_context.?));
+                work(typed_context);
+            }
+        }.callback);
+    }
+
+    /// Wait for previously submitted callbacks. Call from outside this queue.
+    pub fn drain(self: DeviceChangesQueue) void {
+        c.dispatch_sync_f(self.value, null, struct {
+            fn callback(_: ?*anyopaque) callconv(.c) void {}
+        }.callback);
+    }
+};
 
 pub const Device = struct {
     /// Runtime identifier used by Core Audio. Do not persist it because it can change.
@@ -91,33 +117,31 @@ pub fn setAsDefaultInput(device_id: u32) !void {
     ), "setting the default input device");
 }
 
-/// Registers a notification handler without configuring the HAL notification run loop.
-/// The caller owns the context, its synchronization and its lifetime. Keep the
-/// context at a stable address until removal and completion of in-flight callbacks.
+/// HAL retains the queue and copies the block until removal. Keep the captured
+/// context alive until removal and completion of the queue's callbacks.
 pub fn subscribeDeviceChanges(
-    context: anytype,
-    comptime onChange: *const fn (@TypeOf(context)) void,
+    queue: DeviceChangesQueue,
+    block: *const anyopaque,
 ) !void {
-    try checkStatus(c.AudioObjectAddPropertyListener(
+    try checkStatus(AudioObjectAddPropertyListenerBlock(
         c.kAudioObjectSystemObject,
         &devices_address,
-        makeDeviceChangesCallback(@TypeOf(context), onChange),
-        context,
+        queue.value,
+        block,
     ), "registering the device listener");
 }
 
-/// Remove with the same context type, pointer and handler used to subscribe. This only
-/// unregisters the callback; the caller must coordinate in-flight handlers.
-/// Close a handler's queue first if it can be waiting for space there.
+/// Remove with the same queue and block used to subscribe, then drain the queue
+/// before releasing the captured context.
 pub fn unsubscribeDeviceChanges(
-    context: anytype,
-    comptime onChange: *const fn (@TypeOf(context)) void,
+    queue: DeviceChangesQueue,
+    block: *const anyopaque,
 ) !void {
-    try checkStatus(c.AudioObjectRemovePropertyListener(
+    try checkStatus(AudioObjectRemovePropertyListenerBlock(
         c.kAudioObjectSystemObject,
         &devices_address,
-        makeDeviceChangesCallback(@TypeOf(context), onChange),
-        context,
+        queue.value,
+        block,
     ), "removing the device listener");
 }
 
@@ -301,20 +325,4 @@ fn loadDeviceString(
         std.mem.indexOfScalar(u8, buffer, 0) orelse buffer.len;
 
     return allocator.realloc(buffer, len);
-}
-
-test "device callback forwards the typed context" {
-    const Counter = struct {
-        calls: usize = 0,
-
-        fn changed(self: *@This()) void {
-            self.calls += 1;
-        }
-    };
-    const callback = makeDeviceChangesCallback(*Counter, Counter.changed);
-    var counter: Counter = .{};
-
-    _ = callback(c.kAudioObjectSystemObject, 1, &devices_address, &counter);
-
-    try std.testing.expectEqual(@as(usize, 1), counter.calls);
 }

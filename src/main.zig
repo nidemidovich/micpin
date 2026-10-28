@@ -19,5 +19,5 @@ pub fn main(init: std.process.Init) !void {
 }
 
 test {
-    _ = @import("consume.zig");
+    _ = @import("preferred_input.zig");
 }

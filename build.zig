@@ -5,6 +5,11 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
+    const objc = b.dependency("zig_objc", .{
+        .target = target,
+        .optimize = optimize,
+    }).module("objc");
+
     const translate_c = b.dependency("translate_c", .{});
     const translator: Translator = .init(translate_c, .{
         .c_source_file = b.path("src/c.h"),
@@ -36,6 +41,10 @@ pub fn build(b: *std.Build) void {
                 .{
                     .name = "core_audio",
                     .module = core_audio,
+                },
+                .{
+                    .name = "objc",
+                    .module = objc,
                 },
             },
         }),
