@@ -64,8 +64,6 @@ pub const Device = struct {
     name: []const u8,
 };
 
-const devices_address = propertyAddress(c.kAudioHardwarePropertyDevices);
-
 pub const CoreAudioAdapter = struct {
     allocator: std.mem.Allocator,
 
@@ -123,9 +121,10 @@ pub fn subscribeDeviceChanges(
     queue: DeviceChangesQueue,
     block: *const anyopaque,
 ) !void {
+    const address = propertyAddress(c.kAudioHardwarePropertyDevices);
     try checkStatus(AudioObjectAddPropertyListenerBlock(
         c.kAudioObjectSystemObject,
-        &devices_address,
+        &address,
         queue.value,
         block,
     ), "registering the device listener");
@@ -137,9 +136,10 @@ pub fn unsubscribeDeviceChanges(
     queue: DeviceChangesQueue,
     block: *const anyopaque,
 ) !void {
+    const address = propertyAddress(c.kAudioHardwarePropertyDevices);
     try checkStatus(AudioObjectRemovePropertyListenerBlock(
         c.kAudioObjectSystemObject,
-        &devices_address,
+        &address,
         queue.value,
         block,
     ), "removing the device listener");
@@ -163,8 +163,8 @@ fn checkStatus(status: c.OSStatus, operation: []const u8) !void {
 /// Loads the runtime IDs of all connected devices. The caller owns the returned slice.
 /// Queries the size of kAudioHardwarePropertyDevices on kAudioObjectSystemObject,
 /// allocates a slice of that size, then reads the property into the slice.
-pub fn loadDeviceIds(allocator: std.mem.Allocator) ![]u32 {
-    const addr = devices_address;
+fn loadDeviceIds(allocator: std.mem.Allocator) ![]u32 {
+    const addr = propertyAddress(c.kAudioHardwarePropertyDevices);
 
     var data_size: c.UInt32 = 0;
 
@@ -215,7 +215,7 @@ pub fn loadDeviceIds(allocator: std.mem.Allocator) ![]u32 {
 
 /// Loads the IDs of devices with at least one input audio stream.
 /// The caller owns the returned slice.
-pub fn loadInputDeviceIds(allocator: std.mem.Allocator) ![]u32 {
+fn loadInputDeviceIds(allocator: std.mem.Allocator) ![]u32 {
     const devices = try loadDeviceIds(allocator);
     errdefer allocator.free(devices);
 
@@ -231,7 +231,7 @@ pub fn loadInputDeviceIds(allocator: std.mem.Allocator) ![]u32 {
 }
 
 /// Checks whether a device supports audio input, regardless of whether it is recording.
-pub fn hasInput(device_id: u32) !bool {
+fn hasInput(device_id: u32) !bool {
     const addr = c.AudioObjectPropertyAddress{
         .mSelector = c.kAudioDevicePropertyStreams,
         .mScope = c.kAudioObjectPropertyScopeInput,
@@ -254,12 +254,12 @@ pub fn hasInput(device_id: u32) !bool {
     return data_size > 0;
 }
 
-pub fn loadDeviceName(allocator: std.mem.Allocator, device_id: u32) ![]const u8 {
+fn loadDeviceName(allocator: std.mem.Allocator, device_id: u32) ![]const u8 {
     return loadDeviceString(allocator, device_id, c.kAudioObjectPropertyName, "name");
 }
 
 /// Loads the persistent device UID. The caller owns the returned UTF-8 string.
-pub fn loadDeviceUid(allocator: std.mem.Allocator, device_id: u32) ![]const u8 {
+fn loadDeviceUid(allocator: std.mem.Allocator, device_id: u32) ![]const u8 {
     return loadDeviceString(allocator, device_id, c.kAudioDevicePropertyDeviceUID, "UID");
 }
 

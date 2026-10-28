@@ -2,18 +2,15 @@ const std = @import("std");
 const core_audio = @import("core_audio");
 
 pub fn main(init: std.process.Init) !void {
-    const allocator = init.arena.allocator();
-
-    const devices = try core_audio.loadInputDeviceIds(allocator);
+    const adapter = core_audio.CoreAudioAdapter{ .allocator = init.arena.allocator() };
+    const devices = try adapter.loadDevices();
+    defer adapter.freeDevices(devices);
 
     std.debug.print("Found {} audio input devices:\n", .{devices.len});
-    for (devices) |device_id| {
-        const name = try core_audio.loadDeviceName(allocator, device_id);
-        const uid = try core_audio.loadDeviceUid(allocator, device_id);
-
+    for (devices) |device| {
         std.debug.print(
             "AudioDeviceID = {d}, Name = {s}, UID = {s}\n",
-            .{ device_id, name, uid },
+            .{ device.id, device.name, device.uid },
         );
     }
 }

@@ -64,6 +64,12 @@ pub const PreferredInputController = struct {
         self.queue.deinit();
     }
 
+    fn onDevicesChanged(self: *PreferredInputController) void {
+        self.handle() catch |err| {
+            std.log.err("Handling device changes failed: {s}", .{@errorName(err)});
+        };
+    }
+
     fn handle(self: *PreferredInputController) !void {
         const devices = try self.core_audio.loadDevices();
         defer self.core_audio.freeDevices(devices);
@@ -75,12 +81,6 @@ pub const PreferredInputController = struct {
             },
             .disconnected => std.log.debug("Preferred device disconnected", .{}),
         }
-    }
-
-    fn onDevicesChanged(self: *PreferredInputController) void {
-        self.handle() catch |err| {
-            std.log.err("Handling device changes failed: {s}", .{@errorName(err)});
-        };
     }
 
     fn handleSnapshot(self: *PreferredInputController, devices: []const Device) ?PreferedDeviceEvent {
