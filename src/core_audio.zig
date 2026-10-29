@@ -176,7 +176,7 @@ fn loadDeviceIds(allocator: std.mem.Allocator) ![]u32 {
         &data_size,
     );
     if (status != c.noErr) {
-        std.debug.print("AudioObjectGetPropertyDataSize failed: {}\n", .{status});
+        std.log.err("AudioObjectGetPropertyDataSize failed: {}", .{status});
 
         return error.CoreAudioError;
     }
@@ -196,8 +196,8 @@ fn loadDeviceIds(allocator: std.mem.Allocator) ![]u32 {
         devices.ptr,
     );
     if (status != c.noErr) {
-        std.debug.print(
-            "AudioObjectGetPropertyData failed: {}\n",
+        std.log.err(
+            "AudioObjectGetPropertyData failed: {}",
             .{status},
         );
 
@@ -247,7 +247,7 @@ fn hasInput(device_id: u32) !bool {
         &data_size,
     );
     if (status != c.noErr) {
-        std.debug.print("AudioObjectGetPropertyDataSize while reading input streams failed: {}\n", .{status});
+        std.log.err("AudioObjectGetPropertyDataSize while reading input streams failed: {}", .{status});
         return error.CoreAudioError;
     }
 
@@ -287,8 +287,8 @@ fn loadDeviceString(
         @ptrCast(&value),
     );
     if (status != c.noErr) {
-        std.debug.print(
-            "AudioObjectGetPropertyData while reading {s} failed: {}\n",
+        std.log.err(
+            "AudioObjectGetPropertyData while reading {s} failed: {}",
             .{ property_name, status },
         );
 

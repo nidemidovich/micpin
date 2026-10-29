@@ -76,8 +76,11 @@ pub const PreferredInputController = struct {
 
         const event = self.handleSnapshot(devices) orelse return;
         switch (event.state) {
-            .connected => core_audio.setAsDefaultInput(event.id) catch |err| {
-                std.log.err("Setting the preferred microphone failed: {s}", .{@errorName(err)});
+            .connected => {
+                std.log.debug("Preferred device connected", .{});
+                core_audio.setAsDefaultInput(event.id) catch |err| {
+                    std.log.err("Setting the preferred microphone failed: {s}", .{@errorName(err)});
+                };
             },
             .disconnected => std.log.debug("Preferred device disconnected", .{}),
         }
